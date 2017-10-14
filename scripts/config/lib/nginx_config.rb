@@ -42,6 +42,24 @@ class NginxConfig
       index += 1
     end
 
+    json["websockets"] ||= {}
+    json["websockets"].each do |loc, hash|
+      evaled_origin = NginxConfigUtil.interpolate(hash['origin'], ENV)
+      uri           = URI(evaled_origin)
+
+      json["websockets"][loc]["server"] = "#{uri.host}:80"
+      json["websockets"][loc]["name"] = "upstream_endpoint_#{index}"
+      cleaned_path = uri.path
+      cleaned_path.chop! if cleaned_path.end_with?("/")
+      json["websockets"][loc]["path"] = cleaned_path
+      json["websockets"][loc]["host"] = uri.dup.tap {|u| u.path = '' }.to_s
+      %w(http https).each do |scheme|
+        json["websockets"][loc]["redirect_#{scheme}"] = uri.dup.tap {|u| u.scheme = scheme }.to_s
+        json["websockets"][loc]["redirect_#{scheme}"] += "/" if !uri.to_s.end_with?("/")
+      end
+      index += 1
+    end
+
     json["clean_urls"] ||= DEFAULT[:clean_urls]
     json["https_only"] ||= DEFAULT[:https_only]
 

@@ -17,6 +17,11 @@ http {
 
   server_tokens off;
 
+  map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+  }
+
 <% if logging['access'] %>
   access_log logs/access.log;
 <% else %>
@@ -36,6 +41,12 @@ http {
 
   #Must read the body in 5 seconds.
   client_body_timeout 5;
+
+  <% websockets.each do |location, hash| %>
+    upstream <%= hash['name'] %> {
+      server <%= hash['server'] %>;
+    }
+  <% end %>
 
   server {
     listen <%= port %> reuseport;
@@ -97,6 +108,23 @@ http {
       rewrite ^<%= location %>/?(.*)$ <%= hash['path'] %>/$1 break;
       # can reuse variable set above
       proxy_pass $<%= hash['name'] %>;
+      proxy_ssl_server_name on;
+      <% %w(http https).each do |scheme| %>
+      proxy_redirect <%= hash["redirect_#{scheme}"] %> <%= location %>;
+      <% end %>
+    }
+  <% end %>
+
+  # websockets are fun!
+  <% websockets.each do |location, hash| %>
+    set $<%= hash['name'] %> <%= hash['host'] %>;
+    location @<%= location %> {
+      rewrite ^<%= location %>/?(.*)$ <%= hash['path'] %>/$1 break;
+      # can reuse variable set above
+      proxy_pass $<%= hash['name'] %>;
+      proxy_http_version 1.1;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
       proxy_ssl_server_name on;
       <% %w(http https).each do |scheme| %>
       proxy_redirect <%= hash["redirect_#{scheme}"] %> <%= location %>;
